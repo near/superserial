@@ -111,6 +111,8 @@ function parseRoot(): AstRoot {
     }
     case '"':
       return parseString();
+  case "'":
+      return parseBytes();
     case "[":
       return parseArray();
     case "/":
@@ -205,68 +207,52 @@ function parseNumber(): AstNumber | AstBigInt {
   return [3, +result * mult];
 }
 
-function parseString(): AstString {
-  let result = "";
-  pos++;
-  while (1) {
-    switch (buf[pos]) {
-      case '"':
-        pos++;
-        return [5, result];
-      case "\\":
-        pos++;
-        switch (buf[pos]) {
-          case "u": {
-            pos++;
-            let uffff = 0;
-            for (let i = 0; i < 4; i++) {
-              const hex = parseInt(buf[pos], 16);
-              if (!isFinite(hex)) {
-                throw error();
-              }
-              pos++;
-              uffff = uffff * 16 + hex;
-            }
-            result += String.fromCharCode(uffff);
-            continue;
-          }
-          case '"':
-            pos++;
-            result += '"';
-            continue;
-          case "\\":
-            pos++;
-            result += "\\";
-            continue;
-          case "b":
-            pos++;
-            result += "\b";
-            continue;
-          case "f":
-            pos++;
-            result += "\f";
-            continue;
-          case "n":
-            pos++;
-            result += "\n";
-            continue;
-          case "r":
-            pos++;
-            result += "\r";
-            continue;
-          case "t":
-            pos++;
-            result += "\t";
-            continue;
-        }
-        break;
-      default:
-        result += buf[pos++];
-        continue;
-    }
-    break;
+function bytesToU8Array(bytes: string): Uint8Array {
+  let ret = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    ret[i] = bytes.charCodeAt(i);
   }
-  throw error();
+  return ret;
+}
+
+function bytesToU32(bytes: string): number {
+  let array = bytesToU8Array(bytes);
+  let u32 = new Uint32Array(array.buffer)[0];
+  return u32
+}
+
+function bytesToU16Array(bytes: string): Uint16Array {
+  let array = bytesToU8Array(bytes);
+  return new Uint16Array(array.buffer);
+}
+
+function parseString(): AstString {
+  pos++;
+  let len = bytesToU32(buf.slice(pos, pos+4));
+  pos+=4;
+  let charCode = bytesToU16Array(buf.slice(pos, pos+2*len));
+  pos+=2*len;
+  let result = String.fromCharCode(...charCode);
+  if (buf[pos] == '"') {
+      pos++;
+      return [5, result];
+  } else {
+      throw error();
+  }
+}
+
+function parseBytes(): AstString {
+  pos++;
+  let len = bytesToU32(buf.slice(pos, pos+4));
+  pos+=4;
+  let result = buf.slice(pos, pos+len);
+  pos+=len;
+  if (buf[pos] == "'") {
+      pos++;
+      return [5, result];
+  } else {
+      throw error();
+  }
 }
 
 function parseArray(): AstArray {
@@ -302,8 +288,15 @@ function parseObject(name: string | null = null): AstObject {
   }
   const result = [] as [AstString, AstAny][];
   while (1) {
-    const key = parseString(); // TODO Symbol
-    white();
+    let key;
+    if (buf[pos] == '"') {
+        key = parseString();
+    } else if(buf[pos] == "'") {
+        key = parseBytes();
+    } else {
+        error();
+    }
+    // TODO Symbol    white();
     if (buf[pos] !== ":") {
       throw error();
     }

@@ -15,10 +15,49 @@ export function serialize(value: any, options: SerializeOptions = {}): string {
   const objectMap = new Map<number, any>();
   const objectIndexMap = new Map<any, number>();
 
-  function _stringifyString(value: string): boolean {
-    output += `"${value.replace('"', '\\"')}"`; // " 문자는 escape 해야합니다.
+  function u8ArrayToBytes(array: Uint8Array): string {
+    let ret = "";
+    for (let e of array) {
+      ret += String.fromCharCode(e);
+    }
+    return ret;
+  }
+
+  function u32ToBytes(u32: number): string {
+    let data = new Uint32Array([u32]);
+    let array = new Uint8Array(data.buffer);
+    let key = u8ArrayToBytes(array);
+    return key;
+  }
+
+  function u16ToBytes(u16: number): string {
+      let data = new Uint16Array([u16]);
+      let array = new Uint8Array(data.buffer);
+      let key = u8ArrayToBytes(array);
+      return key;
+  }
+
+  function _stringifyString(value:string): boolean {
+    for (let j = 0; j < value.length; j++) {
+        if (value.charCodeAt(j) > 255) {
+            // utf-16 string
+            output += '"';
+            output += u32ToBytes(value.length)
+            for (let i = 0; i < value.length; i++) {
+                output += u16ToBytes(value.charCodeAt(i))
+            }
+            output += '"'
+            return true;
+        }
+    }
+    // All bytes
+    output += "'";
+    output += u32ToBytes(value.length);
+    output += value
+    output += "'";
     return true;
   }
+
   function _stringifyScalar(value: any): boolean {
     if (value === null) {
       output += "null";
